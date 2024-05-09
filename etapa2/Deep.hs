@@ -103,7 +103,11 @@ applyTransformation transformation region = Transform transformation region
     prefixate, e.g. S.translation, sunt cele din modulul Shallow.
 -}
 toTransformation :: TransformationAST -> Transformation
-toTransformation transformation = undefined
+toTransformation transformation = S.combineTransformations $ case transformation of
+    Translation x y -> [S.translation x y]
+    Scaling x -> [S.scaling x]
+    Combine transformations -> map toTransformation transformations
+
 
 {-
     *** TODO ***
@@ -114,7 +118,14 @@ toTransformation transformation = undefined
     Region = (Point -> Bool).
 -}
 toRegion :: RegionAST -> Region
-toRegion region = undefined
+toRegion region = case region of
+    FromPoints points -> S.fromPoints points
+    Rectangle x y -> S.rectangle x y
+    Circle r -> S.circle r
+    Complement region -> S.complement $ toRegion region
+    Union region1 region2 -> S.union (toRegion region1) (toRegion region2)
+    Intersection region1 region2 -> S.intersection (toRegion region1) (toRegion region2)
+    Transform transformation region -> S.applyTransformation (toTransformation transformation) (toRegion region)
 
 {-
     Varianta actualizată a a funcției inside.
@@ -152,7 +163,10 @@ inside = flip toRegion
     [Translation 1.0 2.0,Translation 3.0 4.0,Scaling 2.0,Scaling 3.0]
 -}
 decomposeTransformation :: TransformationAST -> [TransformationAST]
-decomposeTransformation transformation = undefined
+decomposeTransformation transformation = case transformation of
+    Translation x y -> [Translation x y]
+    Scaling x -> [Scaling x]
+    Combine transformations -> concatMap decomposeTransformation transformations
 
 {-
     *** TODO ***
@@ -167,7 +181,7 @@ decomposeTransformation transformation = undefined
     > fuseTransformations [Translation 1 2]
     [Translation 1.0 2.0]
 
-    > fuseTransformations [Scaling 2, Scaling 3]             
+    > fuseTransformations [Scaling 2, Scaling 3]
     [Scaling 6.0]
 
     > fuseTransformations [ Translation 1 2, Translation 3 4
@@ -177,7 +191,12 @@ decomposeTransformation transformation = undefined
     [Translation 4.0 6.0,Scaling 6.0,Translation 5.0 6.0]
 -}
 fuseTransformations :: [TransformationAST] -> [TransformationAST]
-fuseTransformations = undefined
+fuseTransformations = foldr f []
+  where
+    f (Translation x1 y1) (Translation x2 y2 : ts) = Translation (x1 + x2) (y1 + y2) : ts
+    f (Scaling x1) (Scaling x2 : ts) = Scaling (x1 * x2) : ts
+    f t ts = t : ts
+
 
 {-
     *** TODO ***
@@ -197,7 +216,7 @@ fuseTransformations = undefined
       optimizată.
     * Toate cosmetizările de mai sus se realizează după optimizarea recursivă
       a subregiunilor.
-    
+
     Constrângeri: evitați duplicarea codului.
 
     Hints:
@@ -211,7 +230,7 @@ fuseTransformations = undefined
         Transform (Combine [ Translation 1 2
                            , Combine [ Translation 3 4
                                      , Scaling 2
-                                     ]  
+                                     ]
                            , Scaling 3
                            ])
                   (Circle 5)
@@ -221,7 +240,7 @@ fuseTransformations = undefined
         Transform (Combine [ Translation 1 2
                            , Combine [ Translation 3 4
                                      , Scaling 2
-                                     ]  
+                                     ]
                            , Scaling 3
                            ])
                   (Transform (Scaling 4)
@@ -237,7 +256,7 @@ fuseTransformations = undefined
         Transform (Combine [ Translation 1 2
                            , Combine [ Translation 3 4
                                      , Scaling 2
-                                     ]  
+                                     ]
                            , Scaling 3
                            ])
                   (Complement (Transform (Scaling 4)
@@ -254,7 +273,7 @@ fuseTransformations = undefined
         Union (Transform (Combine [ Translation 1 2
                                   , Combine [ Translation 3 4
                                             , Scaling 2
-                                            ]  
+                                            ]
                                   , Scaling 3
                                   ])
                          (Complement (Transform (Scaling 4)
@@ -265,4 +284,29 @@ fuseTransformations = undefined
                      (Rectangle 6.0 7.0))
 -}
 optimizeTransformations :: RegionAST -> RegionAST
-optimizeTransformations region = undefined
+optimizeTransformations region = case region of
+    Transform t r -> let transformations = decomposeTransformation t
+                         fusedTransformations = fuseTransformations transformations
+                         optimizedRegion = optimizeTransformations r
+                     in case optimizedRegion of
+                         Transform t' r' -> let transformations' = decomposeTransformation t'
+                                                allTransformations = fusedTransformations ++ transformations'
+                                                fusedAllTransformations = fuseTransformations allTransformations
+                                            in applyTransformation (combineTransformations fusedAllTransformations) r'
+                         _ -> applyTransformation (combineTransformations fusedTransformations) optimizedRegion
+    Union r1 r2 -> let optimizedR1 = optimizeTransformations r1
+                       optimizedR2 = optimizeTransformations r2
+                   in case (optimizedR1, optimizedR2) of
+                       (Transform t1 r1', Transform t2 r2') | t1 == t2 -> Transform t1 (Union r1' r2')
+                       _ -> Union optimizedR1 optimizedR2
+    Intersection r1 r2 -> let optimizedR1 = optimizeTransformations r1
+                              optimizedR2 = optimizeTransformations r2
+                          in case (optimizedR1, optimizedR2) of
+                              (Transform t1 r1', Transform t2 r2') | t1 == t2 -> Transform t1 (Intersection r1' r2')
+                              _ -> Intersection optimizedR1 optimizedR2
+    Complement r -> let optimizedRegion = optimizeTransformations r
+                    in case optimizedRegion of
+                        Transform t r' -> Transform t (Complement r')
+                        _ -> Complement optimizedRegion
+    _ -> region
+
