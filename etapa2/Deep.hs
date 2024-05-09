@@ -170,10 +170,10 @@ inside = flip toRegion
 -}
 decomposeTransformation :: TransformationAST -> [TransformationAST]
 decomposeTransformation transformation = case transformation of
-    -- S. translation si S. scaling sunt functii care returneaza o lista cu o singura transformare
-    Translation x y -> [S.translation x y]
-    Scaling x -> [S.scaling x]
-    -- S. combineTransformations combina o lista de transformari
+    -- daca transformarea este de tip Translation sau Scaling, se adauga la lista
+    Translation x y -> [Translation x y]
+    Scaling x -> [Scaling x]
+    -- daca transformarea este de tip Combine, se concateneaza listele de transformari
     Combine transformations -> concatMap decomposeTransformation transformations
 
 {-
