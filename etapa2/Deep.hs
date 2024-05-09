@@ -103,10 +103,11 @@ applyTransformation transformation region = Transform transformation region
     prefixate, e.g. S.translation, sunt cele din modulul Shallow.
 -}
 toTransformation :: TransformationAST -> Transformation
-toTransformation transformation = S.combineTransformations $ case transformation of
-    Translation x y -> [S.translation x y]
-    Scaling x -> [S.scaling x]
-    Combine transformations -> map toTransformation transformations
+toTransformation transformation = S.combineTransformations
+    $ case transformation of
+        Translation x y -> [S.translation x y]
+        Scaling x -> [S.scaling x]
+        Combine transformations -> map toTransformation transformations
 
 
 {-
@@ -117,13 +118,18 @@ toTransformation transformation = S.combineTransformations $ case transformation
     din etapa 1, sub forma unei funcții caracteristice cu tipul
     Region = (Point -> Bool).
 -}
+
 toRegion :: RegionAST -> Region
 toRegion region = case region of
+    -- S. combina toate punctele din lista
     FromPoints points -> S.fromPoints points
+    -- S. rectangle si S. circle sunt functii care verifica daca un punct se afla in interiorul unui dreptunghi sau cerc
     Rectangle x y -> S.rectangle x y
     Circle r -> S.circle r
+    -- S. complement si S. union sunt functii care verifica daca un punct se afla in interiorul complementului sau al reuniunii a doua regiuni
     Complement region -> S.complement $ toRegion region
     Union region1 region2 -> S.union (toRegion region1) (toRegion region2)
+    -- S. intersection este o functie care verifica daca un punct se afla in interiorul intersectiei a doua regiuni
     Intersection region1 region2 -> S.intersection (toRegion region1) (toRegion region2)
     Transform transformation region -> S.applyTransformation (toTransformation transformation) (toRegion region)
 
@@ -164,8 +170,10 @@ inside = flip toRegion
 -}
 decomposeTransformation :: TransformationAST -> [TransformationAST]
 decomposeTransformation transformation = case transformation of
-    Translation x y -> [Translation x y]
-    Scaling x -> [Scaling x]
+    -- S. translation si S. scaling sunt functii care returneaza o lista cu o singura transformare
+    Translation x y -> [S.translation x y]
+    Scaling x -> [S.scaling x]
+    -- S. combineTransformations combina o lista de transformari
     Combine transformations -> concatMap decomposeTransformation transformations
 
 {-
@@ -193,8 +201,11 @@ decomposeTransformation transformation = case transformation of
 fuseTransformations :: [TransformationAST] -> [TransformationAST]
 fuseTransformations = foldr f []
   where
+    -- daca transformarea curenta este de acelasi tip cu ultima transformare din lista, se aduna sau inmultesc valorile
     f (Translation x1 y1) (Translation x2 y2 : ts) = Translation (x1 + x2) (y1 + y2) : ts
+    -- daca transformarea curenta este de acelasi tip cu ultima transformare din lista, se inmultesc valorile
     f (Scaling x1) (Scaling x2 : ts) = Scaling (x1 * x2) : ts
+    -- daca transformarea curenta nu este de acelasi tip cu ultima transformare din lista, se adauga la inceputul listei
     f t ts = t : ts
 
 
@@ -284,29 +295,4 @@ fuseTransformations = foldr f []
                      (Rectangle 6.0 7.0))
 -}
 optimizeTransformations :: RegionAST -> RegionAST
-optimizeTransformations region = case region of
-    Transform t r -> let transformations = decomposeTransformation t
-                         fusedTransformations = fuseTransformations transformations
-                         optimizedRegion = optimizeTransformations r
-                     in case optimizedRegion of
-                         Transform t' r' -> let transformations' = decomposeTransformation t'
-                                                allTransformations = fusedTransformations ++ transformations'
-                                                fusedAllTransformations = fuseTransformations allTransformations
-                                            in applyTransformation (combineTransformations fusedAllTransformations) r'
-                         _ -> applyTransformation (combineTransformations fusedTransformations) optimizedRegion
-    Union r1 r2 -> let optimizedR1 = optimizeTransformations r1
-                       optimizedR2 = optimizeTransformations r2
-                   in case (optimizedR1, optimizedR2) of
-                       (Transform t1 r1', Transform t2 r2') | t1 == t2 -> Transform t1 (Union r1' r2')
-                       _ -> Union optimizedR1 optimizedR2
-    Intersection r1 r2 -> let optimizedR1 = optimizeTransformations r1
-                              optimizedR2 = optimizeTransformations r2
-                          in case (optimizedR1, optimizedR2) of
-                              (Transform t1 r1', Transform t2 r2') | t1 == t2 -> Transform t1 (Intersection r1' r2')
-                              _ -> Intersection optimizedR1 optimizedR2
-    Complement r -> let optimizedRegion = optimizeTransformations r
-                    in case optimizedRegion of
-                        Transform t r' -> Transform t (Complement r')
-                        _ -> Complement optimizedRegion
-    _ -> region
-
+optimizeTransformations region = undefined
